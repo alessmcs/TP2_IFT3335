@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 from sklearn import linear_model
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neural_network import MLPClassifier
 import matplotlib
 import transformers
 import re  # regex library
@@ -53,6 +55,12 @@ def main():
     tfidf = tf_idf(df['text'])
     print(tfidf.head)
 
+    # todo: choose parameters
+    models = {
+        "LR": linear_model.LinearRegression(),
+        "RF": RandomForestClassifier(),
+        "MLP": MLPClassifier()
+    }
 
 
 # Entry point
