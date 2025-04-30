@@ -9,6 +9,8 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.neural_network import MLPClassifier
 from sklearn import metrics
+from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
 import matplotlib
 import transformers
 import re  # regex library
@@ -58,11 +60,17 @@ def train_model(model, inputs, labels, test_inputs, test_labels):
 
     return scores, accuracy, f1_score
 
+def to_embedding(text):
+
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    embeddings = model.encode(text)
+    return embeddings
+
 
 
 def main():
 
-    df = pd.read_csv('spam_train.csv')
+    df = pd.read_csv('TP2_code/spam_train.csv')
 
     # Preprocess the data
     df['text'] = pretraitement(df['text'])
@@ -85,6 +93,14 @@ def main():
         "MLP": MLPClassifier()
     }
 
+    vector = []
+
+    # for i in tqdm(range(len(df["text"]))):
+    for i in tqdm(range(20)):
+        vector.append(to_embedding(df["text"][i]))
+
+    print(vector[0])
+
     for model in models:
         print("training model " + model)
 
@@ -99,6 +115,8 @@ def main():
         print('tfidf scores', tfidf_scores)
         print('tfidf accuracy', tfidf_accuracy)
         print('tfidf f1', tfidf_f1, '\n')
+
+
 
 
 # Entry point
