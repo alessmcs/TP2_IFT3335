@@ -1,16 +1,21 @@
-# Viviane BINET (), Alessandra MANCAS (20249098)
+# Viviane BINET (20244728), Alessandra MANCAS (20249098)
 
 import pandas as pd
 import numpy as np
+from collections.abc import Sequence
+from mlens.ensemble import SuperLearner
 from sklearn import linear_model
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.neural_network import MLPClassifier
 from sklearn import metrics
+from sklearn import svm
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+import mlens
 import matplotlib
 import transformers
 import re  # regex library
@@ -54,11 +59,11 @@ def train_model(model, inputs, labels, test_inputs, test_labels):
     print(y_pred)
 
     # tout calculer p/r à l'ensemble de test
-    scores = cross_val_score(classifier, test_inputs, test_labels, cv=5)
+    cross_val = cross_val_score(classifier, test_inputs, test_labels, cv=5)
     accuracy = accuracy_score(test_labels, y_pred)
     f1_score = metrics.f1_score(test_labels, y_pred)
 
-    return scores, accuracy, f1_score
+    return cross_val, accuracy, f1_score
 
 def to_embedding(text):
 
@@ -66,7 +71,14 @@ def to_embedding(text):
     embeddings = model.encode(text)
     return embeddings
 
+def super_learner(x_train, y_train, x_test, y_test, scorer):
+    ensemble = SuperLearner(scorer = accuracy_score, random_state=42, verbose=True, folds=5)    # how many folds?
+    ensemble.add([LogisticRegression(), RandomForestClassifier(), svm.SVC()])
+    ensemble.add_meta(LogisticRegression())
 
+    ensemble.fit(x_train, y_train)
+    pred = ensemble.predict(x_test)
+    return ensemble, pred
 
 def main():
 
@@ -94,27 +106,47 @@ def main():
     }
 
     vector = []
+    max_size = 40
+    df_small = df[0:max_size]
+    print(df_small)
 
     # for i in tqdm(range(len(df["text"]))):
-    for i in tqdm(range(20)):
+    for i in tqdm(range(max_size)):
         vector.append(to_embedding(df["text"][i]))
 
-    print(vector[0])
+    # print(vector[0])
+
+    embed_train, embed_test, y3_train, y3_test = train_test_split(vector, df_small["label"], random_state=42)
+
 
     for model in models:
         print("training model " + model)
 
         classifier = models[model]
-        bow_scores, bow_accuracy, bow_f1 = train_model(classifier, fm_train, y1_train, fm_test, y1_test)
-        tfidf_scores, tfidf_accuracy, tfidf_f1 = train_model(classifier, tfidf_train, y2_train, tfidf_test, y2_test)
+        bow_cross_val, bow_accuracy, bow_f1 = train_model(classifier, fm_train, y1_train, fm_test, y1_test)
+        tfidf_cross_val, tfidf_accuracy, tfidf_f1 = train_model(classifier, tfidf_train, y2_train, tfidf_test, y2_test)
 
-        print('bow scores', bow_scores, 'avg')
+        print('bow cross_val', bow_cross_val, 'avg')
         print('bow accuracy', bow_accuracy)
         print('bow f1', bow_f1, '\n')
 
-        print('tfidf scores', tfidf_scores)
+        print('tfidf cross_val', tfidf_cross_val)
         print('tfidf accuracy', tfidf_accuracy)
         print('tfidf f1', tfidf_f1, '\n')
+
+        embed_cross_val, embed_accuracy, embed_f1 = train_model(classifier, embed_train, y3_train, embed_test, y3_test)
+        print('embed_cross_val', embed_cross_val, "\n")
+
+    # Super Learner
+
+    scorers = {
+        "acc": accuracy_score,
+        "F1": f1_score,
+    }
+
+    ensemble, pred =  super_learner(tfidf_train, y2_train, tfidf_test, y2_test, None )
+    print(ensemble)
+    print(pred)
 
 
 
