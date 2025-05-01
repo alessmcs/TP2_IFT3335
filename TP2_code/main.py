@@ -1,4 +1,6 @@
 # Viviane BINET (20244728), Alessandra MANCAS (20249098)
+import os.path
+import sys
 
 import pandas as pd
 import numpy as np
@@ -19,6 +21,8 @@ import mlens
 import matplotlib
 import transformers
 import re  # regex library
+
+import sys
 
 from transformers import model_addition_debugger
 
@@ -59,7 +63,7 @@ def train_model(model, inputs, labels, test_inputs, test_labels):
     print(y_pred)
 
     # tout calculer p/r à l'ensemble de test
-    cross_val = cross_val_score(classifier, test_inputs, test_labels, cv=5)
+    cross_val = np.mean(cross_val_score(classifier, test_inputs, test_labels, cv=5))
     accuracy = accuracy_score(test_labels, y_pred)
     f1_score = metrics.f1_score(test_labels, y_pred)
 
@@ -77,10 +81,16 @@ def super_learner(x_train, y_train, x_test, y_test, scorer):
     ensemble.add_meta(LogisticRegression())
 
     ensemble.fit(x_train, y_train)
-    pred = ensemble.predict(x_test)
-    return ensemble, pred
+    y_pred = ensemble.predict(x_test)
+
+    # test de performance
+    accuracy = accuracy_score(y_test, y_pred)
+    f1_score = metrics.f1_score(y_test, y_pred)
+    return accuracy, f1_score
 
 def main():
+
+    scores_global = {}
 
     df = pd.read_csv('TP2_code/spam_train.csv')
 
@@ -98,17 +108,19 @@ def main():
     tfidf_train, tfidf_test, y2_train, y2_test = train_test_split(tfidf, df['label'], random_state=42)
     # print(tfidf_train.head)
 
+
+
     # todo: choose parameters
     models = {
-        "LR": linear_model.LogisticRegression(),
-        "RF": RandomForestClassifier(),
-        "MLP": MLPClassifier()
+        "Logistic Regression": linear_model.LogisticRegression(),
+        "Random Forest": RandomForestClassifier(),
+        "MultiLayer Perceptron": MLPClassifier()
     }
 
     vector = []
     max_size = 40
     df_small = df[0:max_size]
-    print(df_small)
+
 
     # for i in tqdm(range(len(df["text"]))):
     for i in tqdm(range(max_size)):
@@ -117,6 +129,7 @@ def main():
     # print(vector[0])
 
     embed_train, embed_test, y3_train, y3_test = train_test_split(vector, df_small["label"], random_state=42)
+
 
 
     for model in models:
@@ -130,12 +143,18 @@ def main():
         print('bow accuracy', bow_accuracy)
         print('bow f1', bow_f1, '\n')
 
+
+
         print('tfidf cross_val', tfidf_cross_val)
         print('tfidf accuracy', tfidf_accuracy)
         print('tfidf f1', tfidf_f1, '\n')
 
         embed_cross_val, embed_accuracy, embed_f1 = train_model(classifier, embed_train, y3_train, embed_test, y3_test)
         print('embed_cross_val', embed_cross_val, "\n")
+
+        scores_global[model] = [bow_cross_val, bow_accuracy, bow_f1, tfidf_cross_val, tfidf_accuracy, tfidf_f1, embed_cross_val, embed_accuracy, embed_f1]
+        print(scores_global)
+
 
     # Super Learner
 
@@ -144,9 +163,25 @@ def main():
         "F1": f1_score,
     }
 
-    ensemble, pred =  super_learner(tfidf_train, y2_train, tfidf_test, y2_test, None )
-    print(ensemble)
-    print(pred)
+    for scorer in scorers:
+        accuracy, f1 = super_learner(tfidf_train, y2_train, tfidf_test, y2_test, scorers[scorer])
+        print(accuracy, f1)
+
+    scores_global["Super Learner"] = [None, None, None, None, accuracy, f1, None, None, None]
+
+    df_global = pd.DataFrame.from_dict(scores_global, orient='index',
+                                       columns=["bow cross-val", "bow accuracy", "bow f1",
+                                                "tfidf cross-val", "tfidf accuracy", "tfidf f1",
+                                                "embed cross-val", "embed accuracy", "embed f1"])
+
+    print(df_global)
+    df_global_transposed = df_global.T
+    ax1 = df_global.plot.bar()
+    ax2 = df_global_transposed.plot.bar()
+    fig1 = ax1.get_figure()
+    fig1.savefig("TP2_code/scores1.png")
+    fig2 = ax2.get_figure()
+    fig2.savefig("TP2_code/scores2.png")
 
 
 
