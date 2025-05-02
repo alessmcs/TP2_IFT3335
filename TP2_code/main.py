@@ -5,7 +5,6 @@ import sys
 import pandas as pd
 import numpy as np
 from collections.abc import Sequence
-from mlens.ensemble import SuperLearner
 from sklearn import linear_model
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
@@ -17,10 +16,14 @@ from sklearn import metrics
 from sklearn import svm
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
-import mlens
+
 import matplotlib
 import transformers
 import re  # regex library
+
+import mlens
+from mlens.ensemble import SuperLearner
+
 
 import sys
 
@@ -36,8 +39,8 @@ def pretraitement(df):
 
 # Bag of words
 # https://towardsdatascience.com/basics-of-countvectorizer-e26677900f9c/
-def bag_of_words(content):
-    vectorizer = CountVectorizer(max_features=5000)
+def bag_of_words(content, no_features):
+    vectorizer = CountVectorizer(max_features=no_features)
     count_matrix = vectorizer.fit_transform(content)
     count_array = count_matrix.toarray()
     df = pd.DataFrame(data=count_array, columns=vectorizer.get_feature_names_out())
@@ -45,8 +48,8 @@ def bag_of_words(content):
     return df
 
 # TF-IDF
-def tf_idf(contents):
-    vectorizer = TfidfVectorizer(max_features=5000)
+def tf_idf(contents, no_features):
+    vectorizer = TfidfVectorizer(max_features=no_features)
     count_matrix = vectorizer.fit_transform(contents)
     count_array = count_matrix.toarray()
     df = pd.DataFrame(data=count_array, columns=vectorizer.get_feature_names_out())
@@ -60,7 +63,6 @@ def train_model(model, inputs, labels, test_inputs, test_labels):
     classifier.fit(inputs, labels)
 
     y_pred = classifier.predict(test_inputs)
-    print(y_pred)
 
     # tout calculer p/r à l'ensemble de test
     cross_val = np.mean(cross_val_score(classifier, test_inputs, test_labels, cv=5))
@@ -69,14 +71,14 @@ def train_model(model, inputs, labels, test_inputs, test_labels):
 
     return cross_val, accuracy, f1_score
 
-def to_embedding(text):
-
+def to_embedding(texts):
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    embeddings = model.encode(text)
+    embeddings = model.encode(texts.tolist(), batch_size=32)  # Convert Series to list
     return embeddings
 
+
 def super_learner(x_train, y_train, x_test, y_test, scorer):
-    ensemble = SuperLearner(scorer = accuracy_score, random_state=42, verbose=True, folds=5)    # how many folds?
+    ensemble = SuperLearner(scorer = accuracy_score, random_state=42, verbose=True, folds=5)
     ensemble.add([LogisticRegression(), RandomForestClassifier(), svm.SVC()])
     ensemble.add_meta(LogisticRegression())
 
@@ -86,29 +88,29 @@ def super_learner(x_train, y_train, x_test, y_test, scorer):
     # test de performance
     accuracy = accuracy_score(y_test, y_pred)
     f1_score = metrics.f1_score(y_test, y_pred)
-    return accuracy, f1_score
+
+    weights = []
+
+    return accuracy, f1_score, weights
 
 def main():
 
     scores_global = {}
 
-    df = pd.read_csv('TP2_code/spam_train.csv')
+    df = pd.read_csv('spam_train.csv')
 
     # Preprocess the data
     df['text'] = pretraitement(df['text'])
     df['label'] = pd.to_numeric(df['label'], downcast='integer', errors='coerce')
     print(df.head())
 
-
-    fm = bag_of_words(df['text'])
+    fm = bag_of_words(df['text'], 5000)
     fm_train, fm_test, y1_train, y1_test = train_test_split(fm, df['label'], random_state=42)
     # print(fm.head)
 
-    tfidf = tf_idf(df['text'])
+    tfidf = tf_idf(df['text'], 5000)
     tfidf_train, tfidf_test, y2_train, y2_test = train_test_split(tfidf, df['label'], random_state=42)
     # print(tfidf_train.head)
-
-
 
     # todo: choose parameters
     models = {
@@ -121,33 +123,31 @@ def main():
     max_size = 40
     df_small = df[0:max_size]
 
-
-    # for i in tqdm(range(len(df["text"]))):
     for i in tqdm(range(max_size)):
         vector.append(to_embedding(df["text"][i]))
 
-    # print(vector[0])
+    print(vector[0])
 
     embed_train, embed_test, y3_train, y3_test = train_test_split(vector, df_small["label"], random_state=42)
-
 
 
     for model in models:
         print("training model " + model)
 
+        # BoW & TF-IDF (partie 1)
         classifier = models[model]
         bow_cross_val, bow_accuracy, bow_f1 = train_model(classifier, fm_train, y1_train, fm_test, y1_test)
         tfidf_cross_val, tfidf_accuracy, tfidf_f1 = train_model(classifier, tfidf_train, y2_train, tfidf_test, y2_test)
 
-        print('bow cross_val', bow_cross_val, 'avg')
+        print('bow cross_val', bow_cross_val)
         print('bow accuracy', bow_accuracy)
         print('bow f1', bow_f1, '\n')
-
-
 
         print('tfidf cross_val', tfidf_cross_val)
         print('tfidf accuracy', tfidf_accuracy)
         print('tfidf f1', tfidf_f1, '\n')
+
+        # Embeddings (partie 2)
 
         embed_cross_val, embed_accuracy, embed_f1 = train_model(classifier, embed_train, y3_train, embed_test, y3_test)
         print('embed_cross_val', embed_cross_val, "\n")
@@ -156,7 +156,7 @@ def main():
         print(scores_global)
 
 
-    # Super Learner
+    # Super Learner (partie 3)
 
     scorers = {
         "acc": accuracy_score,
